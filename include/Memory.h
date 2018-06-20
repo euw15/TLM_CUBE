@@ -15,7 +15,8 @@ class Memory : public sc_module
 
 	    // Initialize memory with random data   
 	    for (int i = 0; i < SIZE; i++)   
-	      mem[i] = 0xAA000000 | (rand() % 256);   
+	      mem[i] = (i);   
+	      //mem[i] = 0xAA000000 | (rand() % 256);   
 	   
 	    SC_THREAD(memoryRespondRequest);   
 	  }

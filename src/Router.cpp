@@ -22,11 +22,8 @@ tlm::tlm_sync_enum Router::nb_transport_bw( tlm::tlm_generic_payload& trans,tlm:
     wait(delay);
     backwardEvent.notify();
 
-    cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
-    cout << "INIT trans/bw = { " << (cmd ? 'W' : 'R') << ", " << hex << adr   
-         << " } , data = " << hex << data << " at time " << sc_time_stamp()   
-         << ", delay = " << delay << endl;
-
+    cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << dec << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
+    
     return tlm::TLM_ACCEPTED;   
   }     
 } 
@@ -56,7 +53,7 @@ tlm::tlm_sync_enum Router::nb_transport_fw( tlm::tlm_generic_payload& trans,tlm:
     //Delay
     wait(delay);
     fordwardEvent.notify();      
-    cout << name() << " BEGIN_REQ RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;      
+    cout << name() << " BEGIN_REQ RECEIVED" << " TRANS ID " << dec << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;      
     
     return tlm::TLM_COMPLETED;
   }  
@@ -65,12 +62,11 @@ tlm::tlm_sync_enum Router::nb_transport_fw( tlm::tlm_generic_payload& trans,tlm:
 void Router::fordwardThread()  
 {   
   while (true) {
-    /*Waits for someone notify the event*/
-    wait(fordwardEvent);  
     /*Pop de queue and send the message*/
     if(!fordwardQueue.empty())
     {
       MessageInfo pendingMessage = fordwardQueue.front();
+      fordwardQueue.pop();
       ID_extension* id_extension;
       pendingMessage.transaction->get_extension( id_extension );
       //pendingMessage.delay = sc_time(10, SC_NS);
@@ -90,9 +86,11 @@ void Router::fordwardThread()
         memorySocket->nb_transport_fw(*pendingMessage.transaction, pendingMessage.phase, pendingMessage.delay);
         //cout<<"SOMETHING IS WRONG";
       }
-      /*Delay between RD/WR request*/
-      
-      //id_extension->transaction_id++; 
+    }
+    else
+    {
+      /*Waits for someone notify the event*/
+      wait(fordwardEvent); 
     }
   }   
 } 
@@ -100,13 +98,13 @@ void Router::fordwardThread()
 void Router::backwardThread()
 {
   while(true){
-    /*Waits for someone notify the event*/
-    wait(backwardEvent);
+    
     /*Pop de queue and send the message back*/
     if(!backwardQueue.empty())
     {
       MessageInfo backwardMessage = backwardQueue.front();
-      //backwardMessage = backwardQueue.front();
+      backwardQueue.pop();
+
       tlm::tlm_command cmd = backwardMessage.transaction->get_command();   
       sc_dt::uint64    adr = backwardMessage.transaction->get_address();   
       
@@ -120,9 +118,6 @@ void Router::backwardThread()
         if (backwardMessage.transaction->is_response_error() )   
           SC_REPORT_ERROR("TLM2", "Response error from nb_transport");   
         
-        //backwardMessage.phase = tlm::BEGIN_RESP;
-        //backwardMessage.delay = sc_time(10, SC_NS);
-
         RequestDirection nextStep = calculateBackwardRoute(m_id, id_extension->transaction_id>>8);
         if(nextStep == RequestDirection::MOVE_X){
           xTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
@@ -134,22 +129,26 @@ void Router::backwardThread()
           zTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
         }
         else{
+          cout << name() << " trans/bw = { " << (cmd ? 'W' : 'R') << ", " << hex << adr   
+            << " } , data = " << hex << data << " at time " << sc_time_stamp()   
+            << ", delay = " << backwardMessage.delay << endl;
           sendEvent.notify();
         }
       
-        //Delay
-        
-       //cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
-        
-      }   
+      }         
+    }
+    else
+    {
+      /*Waits for someone notify the event*/
+      wait(backwardEvent);
     }
   }
 }
 
 void Router::createRequestsThread()   
 {   
-  if(m_id == 0){
-    wait(m_id*10, SC_NS);
+  if(true){
+    //wait(m_id*10, SC_NS);
     /*TML Payload is the struct use to send a request*/
     tlm::tlm_generic_payload trans;
       
@@ -157,14 +156,14 @@ void Router::createRequestsThread()
     ID_extension* id_extension = new ID_extension();
     id_extension->transaction_id += m_id<<8;
     //id_extension->transaction_id = m_id*100;
-    for(int i = 0; i<2; i++){
+    for(int i = 0; i<1; i++){
       /*Sort of the id of the transaction*/
       trans.set_extension( id_extension ); 
      
       /*Set the request information in the payload*/
       tlm::tlm_phase phase = tlm::BEGIN_REQ;   
       sc_time delay = sc_time(10, SC_NS);   
-      tlm::tlm_command cmd = static_cast<tlm::tlm_command>(rand() % 2);   
+      tlm::tlm_command cmd = static_cast<tlm::tlm_command>(0);   
       if (cmd == tlm::TLM_WRITE_COMMAND) data = 0xFF000000 | 0;   
       trans.set_command( cmd );   
       trans.set_address( rand() % 0xFF );   
@@ -174,7 +173,7 @@ void Router::createRequestsThread()
       /*Delay for BEGIN_REQ*/
       wait(delay);
       /*Send the request to the next socket*/
-      cout << name() << " BEGIN_REQ SENT" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;  
+      cout << name() << " BEGIN_REQ SENT" << " TRANS ID " << dec << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;  
     
       RequestDirection nextStep = calculateForwardRoute(m_id, 7);
       if(nextStep == RequestDirection::MOVE_X){
@@ -186,10 +185,12 @@ void Router::createRequestsThread()
       else if(nextStep == RequestDirection::MOVE_Z){
         zInitSocket->nb_transport_fw(trans, phase, delay);
       }
+      else{
+        memorySocket->nb_transport_fw(trans, phase, delay);
+      }
       wait(sendEvent);
       id_extension->transaction_id++; 
     }
-    /*Delay between RD/WR request*/
       
   }
 }  
