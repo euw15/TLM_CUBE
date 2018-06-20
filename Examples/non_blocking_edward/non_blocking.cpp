@@ -207,7 +207,7 @@ struct Router: sc_module
         //pendingMessage.delay = sc_time(10, SC_NS);
 
         /*Send the request to the corresponding socket*/
-        RequestDirection nextStep = calculateForwardRoute(m_id);
+        RequestDirection nextStep = calculateForwardRoute(m_id, 7);
         if(nextStep == RequestDirection::MOVE_X){
           xInitSocket->nb_transport_fw(*pendingMessage.transaction, pendingMessage.phase, pendingMessage.delay);
         }
@@ -253,7 +253,7 @@ struct Router: sc_module
           //backwardMessage.phase = tlm::BEGIN_RESP;
           //backwardMessage.delay = sc_time(10, SC_NS);
 
-          RequestDirection nextStep = calculateBackwardRoute(m_id);
+          RequestDirection nextStep = calculateBackwardRoute(m_id, id_extension->transaction_id>>8);
           if(nextStep == RequestDirection::MOVE_X){
             xTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
           }
@@ -279,13 +279,15 @@ struct Router: sc_module
   void createRequestsThread()   
   {   
     if(m_id == 0){
+      wait(m_id*10, SC_NS);
       /*TML Payload is the struct use to send a request*/
       tlm::tlm_generic_payload trans;
         
       /*Sort of the id of the transaction*/
       ID_extension* id_extension = new ID_extension();
+      id_extension->transaction_id += m_id<<8;
       //id_extension->transaction_id = m_id*100;
-      for(int i = 0; i<3; i++){
+      for(int i = 0; i<1; i++){
         /*Sort of the id of the transaction*/
         trans.set_extension( id_extension ); 
        
@@ -304,7 +306,7 @@ struct Router: sc_module
         /*Send the request to the next socket*/
         cout << name() << " BEGIN_REQ SENT" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;  
       
-        RequestDirection nextStep = calculateForwardRoute(m_id);
+        RequestDirection nextStep = calculateForwardRoute(m_id, 7);
         if(nextStep == RequestDirection::MOVE_X){
           xInitSocket->nb_transport_fw(trans, phase, delay);
         }
@@ -314,7 +316,7 @@ struct Router: sc_module
         else if(nextStep == RequestDirection::MOVE_Z){
           zInitSocket->nb_transport_fw(trans, phase, delay);
         }
-        wait(200, SC_NS);
+        wait(2000, SC_NS);
         id_extension->transaction_id++; 
       }
       /*Delay between RD/WR request*/
@@ -322,51 +324,39 @@ struct Router: sc_module
     }
   }  
 
-  RequestDirection calculateForwardRoute(short id){
-    switch(id){
-      case 0:
-        return RequestDirection::MOVE_X;
-      case 1:
-        return RequestDirection::MOVE_Y;
-      case 2:
-        return RequestDirection::MOVE_X;
-      case 3:
-        return RequestDirection::MOVE_Y;
-      case 4:
-        return RequestDirection::MOVE_Z;
-      case 5:
-        return RequestDirection::MOVE_Z;
-      case 6:
-        return RequestDirection::MOVE_X;
-      case 7:
-        return RequestDirection::MOVE_X;
-      default:
-        return RequestDirection::NO_MOVE;
+  RequestDirection calculateForwardRoute(short id, short destination){
+    if((destination&1)!=(id&1))
+    {
+      return RequestDirection::MOVE_X;
+    }
+    else if((destination&4)!=(id&4)){
+      return RequestDirection::MOVE_Y;
+    }
+    else if((destination&2)!=(id&2)){
+      return RequestDirection::MOVE_Z;
+    }
+    else{
+      return RequestDirection::NO_MOVE;
     }
   }
 
-  RequestDirection calculateBackwardRoute(short id){
-    switch(id){
-      case 0:
-        return RequestDirection::MOVE_X;
-      case 1:
-        return RequestDirection::MOVE_Z;
-      case 2:
-        return RequestDirection::MOVE_Z;
-      case 3:
-        return RequestDirection::NO_MOVE;
-      case 4:
-        return RequestDirection::MOVE_Z;
-      case 5:
-        return RequestDirection::MOVE_X;
-      case 6:
-        return RequestDirection::MOVE_Y;
-      case 7:
-        return RequestDirection::MOVE_Z;
-      default:
-        return RequestDirection::NO_MOVE;
+
+  RequestDirection calculateBackwardRoute(short id, short destination){
+    if((destination&2)!=(id&2))
+    {
+      return RequestDirection::MOVE_Z;
+    }
+    else if((destination&4)!=(id&4)){
+      return RequestDirection::MOVE_Y;
+    }
+    else if((destination&1)!=(id&1)){
+      return RequestDirection::MOVE_X;
+    }
+    else{
+      return RequestDirection::NO_MOVE;
     }
   }
+  
   
   void setId(short id){
      m_id = id;
@@ -525,7 +515,7 @@ struct Router7: sc_module
           //backwardMessage.phase = tlm::BEGIN_RESP;
           //backwardMessage.delay = sc_time(10, SC_NS);
 
-          RequestDirection nextStep = calculateForwardRoute(m_id);
+          RequestDirection nextStep = calculateBackwardRoute(m_id, id_extension->transaction_id >> 8);
           if(nextStep == RequestDirection::MOVE_X){
             xTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
           }
@@ -574,7 +564,7 @@ struct Router7: sc_module
       /*Send the request to the next socket*/
       cout << name() << " BEGIN_REQ SENT" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;  
       
-      RequestDirection nextStep = calculateForwardRoute(m_id);
+      RequestDirection nextStep = calculateForwardRoute(m_id, 7);
       if(nextStep == RequestDirection::MOVE_X){
         xInitSocket->nb_transport_fw(trans, phase, delay);
       }
@@ -591,52 +581,36 @@ struct Router7: sc_module
     }
   }  
 
-  RequestDirection calculateForwardRoute(short id){
-    switch(id){
-      case 0:
-        return RequestDirection::MOVE_X;
-      case 1:
-        return RequestDirection::MOVE_Y;
-      case 2:
-        return RequestDirection::MOVE_X;
-      case 3:
-        return RequestDirection::MOVE_Y;
-      case 4:
-        return RequestDirection::MOVE_Z;
-      case 5:
-        return RequestDirection::MOVE_Z;
-      case 6:
-        return RequestDirection::MOVE_X;
-      case 7:
-        return RequestDirection::MOVE_X;
-      default:
-        return RequestDirection::NO_MOVE;
+  RequestDirection calculateForwardRoute(short id, short destination){
+    if((destination&1)!=(id&1))
+    {
+      return RequestDirection::MOVE_X;
+    }
+    else if((destination&4)!=(id&4)){
+      return RequestDirection::MOVE_Y;
+    }
+    else if((destination&2)!=(id&2)){
+      return RequestDirection::MOVE_Z;
+    }
+    else{
+      return RequestDirection::NO_MOVE;
     }
   }
 
-  RequestDirection calculateBackwardRoute(short id){
-    switch(id){
-      case 0:
-        return RequestDirection::MOVE_X;
-      case 1:
-        return RequestDirection::MOVE_Z;
-      case 2:
-        return RequestDirection::MOVE_Z;
-      case 3:
-        return RequestDirection::NO_MOVE;
-      case 4:
-        return RequestDirection::MOVE_Z;
-      case 5:
-        return RequestDirection::MOVE_X;
-      case 6:
-        return RequestDirection::MOVE_Y;
-      case 7:
-        return RequestDirection::MOVE_Z;
-      default:
-        return RequestDirection::NO_MOVE;
-    }
-  }
   
+  RequestDirection calculateBackwardRoute(short id, short destination){
+    if((destination&2)!=(id&2))
+    {
+      return RequestDirection::MOVE_Z;
+    }
+    else if((destination&1)!=(id&1))
+      return RequestDirection::MOVE_Y;
+    else if((destination&4)!=(id&4))
+      return RequestDirection::MOVE_X;
+    else
+      return RequestDirection::NO_MOVE;
+  }
+
   void setId(short id){
      m_id = id;
   };
