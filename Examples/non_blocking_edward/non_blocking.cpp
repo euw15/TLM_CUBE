@@ -161,10 +161,10 @@ struct Router: sc_module
 
       fordwardEvent.notify();
       
+      cout << name() << " BEGIN_REQ RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;      
       //Delay
       wait(delay);
-      
-      cout << name() << " BEGIN_REQ RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;      
+        
       
       return tlm::TLM_COMPLETED;
     }  
@@ -205,13 +205,9 @@ struct Router: sc_module
       tlm::tlm_sync_enum status; 
 
       status = initSocket->nb_transport_fw(*trans_pending, phase_pending, delay_pending);
-             
-      wait(20, SC_NS);
-      
-      delay_pending=  sc_time(10, SC_NS);
       
       //Delay between RD/WR request
-      wait(100, SC_NS);
+      wait(delay_pending);
       
       id_extension->transaction_id++; 
         
@@ -280,11 +276,7 @@ struct Memory: sc_module
   virtual tlm::tlm_sync_enum nb_transport_fw( tlm::tlm_generic_payload& trans,
                                               tlm::tlm_phase& phase, sc_time& delay )
   {
-    sc_dt::uint64    adr = trans.get_address();
-    unsigned int     len = trans.get_data_length();
     unsigned char*   byt = trans.get_byte_enable_ptr();
-    unsigned int     wid = trans.get_streaming_width();
-
     ID_extension* id_extension = new ID_extension;
     trans.get_extension( id_extension ); 
     
