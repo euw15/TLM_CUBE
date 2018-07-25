@@ -2,12 +2,12 @@
 using namespace sc_core;   
 using namespace sc_dt;   
 using namespace std;   
-   
+
 #include "tlm.h"
 #include "tlm_utils/simple_initiator_socket.h"
 #include "tlm_utils/simple_target_socket.h"
 #include "tlm_utils/peq_with_cb_and_phase.h"
-
+#include <queue>
 struct ID_extension: tlm::tlm_extension<ID_extension> {
   ID_extension() : transaction_id(0) {}
   virtual tlm_extension_base* clone() const { // Must override pure virtual clone method
@@ -105,12 +105,20 @@ struct Initiator: sc_module
   }   
 };   
      
-   
+struct MessageInfo
+{
+  tlm::tlm_generic_payload* transaction;
+  tlm::tlm_phase phase;
+  sc_time delay;
+};
 /*
 The Router module only sends request
 */
 struct Router: sc_module
 {
+  /*Queue with the transtions pending*/
+  std::queue<MessageInfo> fordwardQueue;
+  std::queue<MessageInfo> backwardQueue;
   /*Init and target socket use to send and recibe messages*/
   tlm_utils::simple_initiator_socket<Router> initSocket; 
   tlm_utils::simple_target_socket<Router> targetSocket;
@@ -155,17 +163,13 @@ struct Router: sc_module
       }
       
       // Now queue the transaction until the annotated time has elapsed
-      trans_pending=&trans;
-      phase_pending=phase;
-      delay_pending=delay;
-
+      MessageInfo pendingMessage {&trans, phase, delay};
+      fordwardQueue.push(pendingMessage);
       fordwardEvent.notify();
       
       cout << name() << " BEGIN_REQ RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;      
       //Delay
       wait(delay);
-        
-      
       return tlm::TLM_COMPLETED;
     }  
   }
@@ -188,9 +192,6 @@ struct Router: sc_module
       delay_bw=delay;
              
       backwardEvent.notify();
-    
-      cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
-      
       return tlm::TLM_ACCEPTED;   
     }   
   } 
@@ -198,19 +199,19 @@ struct Router: sc_module
   void fordwardThread()  
   {   
     while (true) {
-      // Wait for an event to pop out of the back end of the queue   
       wait(fordwardEvent);  
-      ID_extension* id_extension = new ID_extension;
-      trans_pending->get_extension( id_extension ); 
-      tlm::tlm_sync_enum status; 
-
-      status = initSocket->nb_transport_fw(*trans_pending, phase_pending, delay_pending);
-      
-      //Delay between RD/WR request
-      wait(delay_pending);
-      
-      id_extension->transaction_id++; 
+      if(!fordwardQueue.empty())
+      {
+        MessageInfo pendingMessage = fordwardQueue.front();
+        ID_extension* id_extension = new ID_extension;
+        pendingMessage.transaction->get_extension( id_extension );
+        initSocket->nb_transport_fw(*pendingMessage.transaction, pendingMessage.phase, pendingMessage.delay);
         
+        //Delay between RD/WR request
+        wait(delay_pending);
+        
+        id_extension->transaction_id++; 
+      }
     }   
   } 
 
