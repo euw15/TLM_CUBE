@@ -128,11 +128,6 @@ struct Router: sc_module
   sc_event  backwardEvent;
 
   /*Referance to trans recive in FW method*/
-  tlm::tlm_generic_payload* trans_pending;   
-  tlm::tlm_phase phase_pending;   
-  sc_time delay_pending;
-
-  /*Referance to trans recive in FW method*/
   tlm::tlm_generic_payload* trans_bw;   
   tlm::tlm_phase phase_bw;   
   sc_time delay_bw;
@@ -187,10 +182,8 @@ struct Router: sc_module
         SC_REPORT_ERROR("TLM2", "Response error from nb_transport");   
       
       /*Delegates the problem to the thread*/
-      trans_bw=&trans;
-      phase_bw=phase;
-      delay_bw=delay;
-             
+      MessageInfo backwardMessage {&trans,phase,delay};
+      backwardQueue.push(backwardMessage);
       backwardEvent.notify();
       return tlm::TLM_ACCEPTED;   
     }   
@@ -199,7 +192,9 @@ struct Router: sc_module
   void fordwardThread()  
   {   
     while (true) {
+      /*Waits for someone notify the event*/
       wait(fordwardEvent);  
+      /*Pop de queue and send the message*/
       if(!fordwardQueue.empty())
       {
         MessageInfo pendingMessage = fordwardQueue.front();
@@ -207,8 +202,8 @@ struct Router: sc_module
         pendingMessage.transaction->get_extension( id_extension );
         initSocket->nb_transport_fw(*pendingMessage.transaction, pendingMessage.phase, pendingMessage.delay);
         
-        //Delay between RD/WR request
-        wait(delay_pending);
+        /*Delay between RD/WR request*/
+        wait(pendingMessage.delay);
         
         id_extension->transaction_id++; 
       }
@@ -218,32 +213,35 @@ struct Router: sc_module
   void backwardThread()
   {
     while(true){
-
+      /*Waits for someone notify the event*/
       wait(backwardEvent);
-
-      tlm::tlm_command cmd = trans_bw->get_command();   
-      sc_dt::uint64    adr = trans_bw->get_address();   
-      
-      ID_extension* id_extension = new ID_extension;
-      trans_bw->get_extension( id_extension ); 
-  
+      /*Pop de queue and send the message back*/
+      if(!backwardQueue.empty())
+      {
+        MessageInfo backwardMessage = backwardQueue.front();
+        tlm::tlm_command cmd = backwardMessage.transaction->get_command();   
+        sc_dt::uint64    adr = backwardMessage.transaction->get_address();   
+        
+        ID_extension* id_extension = new ID_extension;
+        backwardMessage.transaction->get_extension( id_extension ); 
     
-      if (phase_bw == tlm::BEGIN_RESP) {
-                                
-        // Initiator obliged to check response status   
-        if (trans_bw->is_response_error() )   
-          SC_REPORT_ERROR("TLM2", "Response error from nb_transport");   
-        
-        phase_bw = tlm::BEGIN_RESP;   
-        targetSocket->nb_transport_bw( *trans_bw, phase_bw, delay_bw );         
-        
-        
-        //Delay
-        wait(delay_bw);
-        
-        cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
-        
-      }   
+      
+        if (backwardMessage.phase == tlm::BEGIN_RESP) {
+                                  
+          // Initiator obliged to check response status   
+          if (backwardMessage.transaction->is_response_error() )   
+            SC_REPORT_ERROR("TLM2", "Response error from nb_transport");   
+          
+          backwardMessage.phase = tlm::BEGIN_RESP;   
+          targetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);         
+          
+          //Delay
+          wait(backwardMessage.delay);
+          
+          cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
+          
+        }   
+      }
     }
   }
 
