@@ -247,6 +247,273 @@ struct Router: sc_module
           backwardMessage.phase = tlm::BEGIN_RESP;
           backwardMessage.delay = sc_time(10, SC_NS);
 
+          RequestDirection nextStep = calculateBackwardRoute(m_id);
+          if(nextStep == RequestDirection::MOVE_X){
+            xTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
+          }
+          else if(nextStep == RequestDirection::MOVE_Y){
+            yTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
+          }
+          else if(nextStep == RequestDirection::MOVE_Z){
+            zTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
+          }
+          else{
+            cout<<"ALL NODES HAS BEEN NOTIFY \n";
+          }
+        
+          //Delay
+          wait(backwardMessage.delay);
+          
+          cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
+          
+        }   
+      }
+    }
+  }
+
+  void createRequestsThread()   
+  {   
+    if(m_id == 0){
+      /*TML Payload is the struct use to send a request*/
+      tlm::tlm_generic_payload trans;
+
+      /*Sort of the id of the transaction*/
+      ID_extension* id_extension = new ID_extension;
+      trans.set_extension( id_extension ); 
+       
+      /*Set the request information in the payload*/
+      tlm::tlm_phase phase = tlm::BEGIN_REQ;   
+      sc_time delay = sc_time(10, SC_NS);   
+      tlm::tlm_command cmd = static_cast<tlm::tlm_command>(rand() % 2);   
+      if (cmd == tlm::TLM_WRITE_COMMAND) data = 0xFF000000 | 0;   
+      trans.set_command( cmd );   
+      trans.set_address( rand() % 0xFF );   
+      trans.set_data_ptr( reinterpret_cast<unsigned char*>(&data) );   
+      trans.set_data_length( sizeof(int));   
+   
+      /*Delay for BEGIN_REQ*/
+      wait(10, SC_NS);
+      /*Send the request to the next socket*/
+      cout << name() << " BEGIN_REQ SENT" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;  
+      
+      RequestDirection nextStep = calculateForwardRoute(m_id);
+      if(nextStep == RequestDirection::MOVE_X){
+        xInitSocket->nb_transport_fw(trans, phase, delay);
+      }
+      else if(nextStep == RequestDirection::MOVE_Y){
+        yInitSocket->nb_transport_fw(trans, phase, delay);
+      }
+      else if(nextStep == RequestDirection::MOVE_Z){
+        zInitSocket->nb_transport_fw(trans, phase, delay);
+      }
+      /*Delay between RD/WR request*/
+      wait(100, SC_NS);
+        
+      id_extension->transaction_id++; 
+    }
+  }  
+
+  RequestDirection calculateForwardRoute(short id){
+    switch(id){
+      case 0:
+        return RequestDirection::MOVE_X;
+      case 1:
+        return RequestDirection::MOVE_Y;
+      case 2:
+        return RequestDirection::MOVE_X;
+      case 3:
+        return RequestDirection::MOVE_Y;
+      case 4:
+        return RequestDirection::MOVE_Z;
+      case 5:
+        return RequestDirection::MOVE_Z;
+      case 6:
+        return RequestDirection::MOVE_X;
+      case 7:
+        return RequestDirection::MOVE_X;
+      default:
+        return RequestDirection::NO_MOVE;
+    }
+  }
+
+  RequestDirection calculateBackwardRoute(short id){
+    switch(id){
+      case 0:
+        return RequestDirection::MOVE_X;
+      case 1:
+        return RequestDirection::MOVE_Z;
+      case 2:
+        return RequestDirection::MOVE_Z;
+      case 3:
+        return RequestDirection::NO_MOVE;
+      case 4:
+        return RequestDirection::MOVE_Z;
+      case 5:
+        return RequestDirection::MOVE_X;
+      case 6:
+        return RequestDirection::MOVE_Y;
+      case 7:
+        return RequestDirection::MOVE_Z;
+      default:
+        return RequestDirection::NO_MOVE;
+    }
+  }
+  
+  void setId(short id){
+     m_id = id;
+  };
+
+};   
+
+struct Router7: sc_module
+{
+  /*Queue with the transtions pending*/
+  std::queue<MessageInfo> fordwardQueue;
+  std::queue<MessageInfo> backwardQueue;
+
+  /*Init and target socket use to send and recibe messages*/
+  tlm_utils::simple_initiator_socket<Router7>  xInitSocket;
+  tlm_utils::simple_initiator_socket<Router7>  yInitSocket; 
+  tlm_utils::simple_initiator_socket<Router7>  zInitSocket; 
+  tlm_utils::simple_target_socket<Router7>     xTargetSocket;
+  tlm_utils::simple_target_socket<Router7>     yTargetSocket;
+  tlm_utils::simple_target_socket<Router7>     zTargetSocket;
+  
+  tlm_utils::simple_initiator_socket<Router7>  memorySocket; 
+
+  /*Event used to notify the thread it has to iterate*/
+  sc_event  fordwardEvent;
+  sc_event  backwardEvent;
+
+
+  /*Default ID*/
+  short m_id = -1;
+
+  /*For init router7*/
+  int data;
+
+  SC_CTOR(Router7)   
+  : xInitSocket("xInitSocket"),xTargetSocket("xTargetSocket"),
+    yInitSocket("yInitSocket"),yTargetSocket("yTargetSocket"),
+    zInitSocket("zInitSocket"),zTargetSocket("zTargetSocket"),
+    memorySocket("memorySocket")
+  {   
+    // Register callbacks for incoming interface method calls
+    xInitSocket.register_nb_transport_bw(this, &Router7::nb_transport_bw);
+    xTargetSocket.register_nb_transport_fw(this, &Router7::nb_transport_fw);
+    yInitSocket.register_nb_transport_bw(this, &Router7::nb_transport_bw);
+    yTargetSocket.register_nb_transport_fw(this, &Router7::nb_transport_fw);
+    zInitSocket.register_nb_transport_bw(this, &Router7::nb_transport_bw);
+    zTargetSocket.register_nb_transport_fw(this, &Router7::nb_transport_fw);
+    memorySocket.register_nb_transport_bw(this, &Router7::nb_transport_bw);
+
+    SC_THREAD(fordwardThread);  
+    SC_THREAD(backwardThread);
+    SC_THREAD(createRequestsThread);
+  }  
+
+  virtual tlm::tlm_sync_enum nb_transport_fw( tlm::tlm_generic_payload& trans,tlm::tlm_phase& phase, sc_time& delay )
+  {
+    unsigned char*   byt = trans.get_byte_enable_ptr();
+    ID_extension* id_extension = new ID_extension;
+    trans.get_extension( id_extension ); 
+    
+    if(phase == tlm::BEGIN_REQ){
+      // Obliged to check the transaction attributes for unsupported features
+      // and to generate the appropriate error response
+      if (byt != 0) {
+        trans.set_response_status( tlm::TLM_BYTE_ENABLE_ERROR_RESPONSE );
+        return tlm::TLM_COMPLETED;
+      }
+      
+      // Now queue the transaction until the annotated time has elapsed
+      MessageInfo pendingMessage {&trans, phase, delay};
+      fordwardQueue.push(pendingMessage);
+      fordwardEvent.notify();
+      
+      cout << name() << " BEGIN_REQ RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;      
+      //Delay
+      wait(delay);
+      return tlm::TLM_COMPLETED;
+    }  
+  }
+
+  virtual tlm::tlm_sync_enum nb_transport_bw( tlm::tlm_generic_payload& trans,tlm::tlm_phase& phase, sc_time& delay )   
+  {     
+    ID_extension* id_extension = new ID_extension;
+    trans.get_extension( id_extension ); 
+    tlm::tlm_command cmd = trans.get_command();   
+    sc_dt::uint64    adr = trans.get_address();   
+    /*Check the resp was done*/
+    if (phase == tlm::BEGIN_RESP) {
+                              
+      /*Initiator obliged to check response status*/   
+      if (trans.is_response_error() )   
+        SC_REPORT_ERROR("TLM2", "Response error from nb_transport");   
+      
+      /*Delegates the problem to the thread*/
+      MessageInfo backwardMessage {&trans,phase,delay};
+      backwardQueue.push(backwardMessage);
+      backwardEvent.notify();
+
+      cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
+      cout << "INIT trans/bw = { " << (cmd ? 'W' : 'R') << ", " << hex << adr   
+           << " } , data = " << hex << data << " at time " << sc_time_stamp()   
+           << ", delay = " << delay << endl;
+
+      return tlm::TLM_ACCEPTED;   
+    }     
+  } 
+  
+  void fordwardThread()  
+  {   
+    while (true) {
+      /*Waits for someone notify the event*/
+      wait(fordwardEvent);  
+      /*Pop de queue and send the message*/
+      if(!fordwardQueue.empty())
+      {
+        MessageInfo pendingMessage = fordwardQueue.front();
+        ID_extension* id_extension = new ID_extension;
+        pendingMessage.transaction->get_extension( id_extension );
+        pendingMessage.delay = sc_time(10, SC_NS);
+
+        /*Send the request to the corresponding socket*/
+        memorySocket->nb_transport_fw(*pendingMessage.transaction, pendingMessage.phase, pendingMessage.delay);
+        
+        /*Delay between RD/WR request*/
+        wait(pendingMessage.delay);
+        
+        id_extension->transaction_id++; 
+      }
+    }   
+  } 
+
+  void backwardThread()
+  {
+    while(true){
+      /*Waits for someone notify the event*/
+      wait(backwardEvent);
+      /*Pop de queue and send the message back*/
+      if(!backwardQueue.empty())
+      {
+        MessageInfo backwardMessage = backwardQueue.front();
+        tlm::tlm_command cmd = backwardMessage.transaction->get_command();   
+        sc_dt::uint64    adr = backwardMessage.transaction->get_address();   
+        
+        ID_extension* id_extension = new ID_extension;
+        backwardMessage.transaction->get_extension( id_extension ); 
+    
+      
+        if (backwardMessage.phase == tlm::BEGIN_RESP) {
+                                  
+          // Initiator obliged to check response status   
+          if (backwardMessage.transaction->is_response_error() )   
+            SC_REPORT_ERROR("TLM2", "Response error from nb_transport");   
+          
+          backwardMessage.phase = tlm::BEGIN_RESP;
+          backwardMessage.delay = sc_time(10, SC_NS);
+
           RequestDirection nextStep = calculateForwardRoute(m_id);
           if(nextStep == RequestDirection::MOVE_X){
             xTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
@@ -363,15 +630,12 @@ struct Router: sc_module
      m_id = id;
   };
 
-};   
-
+}; 
 /* Target memory*/  
 struct Memory: sc_module   
 {   
   /*Multiple targets but only target x is used*/
   tlm_utils::simple_target_socket<Memory> xTargetSocket;
-  tlm_utils::simple_target_socket<Memory> yTargetSocket;
-  tlm_utils::simple_target_socket<Memory> zTargetSocket;
 
   /*Message request queue*/
   std::queue<MessageInfo> incomingRequest;
@@ -384,11 +648,9 @@ struct Memory: sc_module
   sc_event  requestEvent;
 
   SC_CTOR(Memory)   
-  : xTargetSocket("xTargetSocket"),yTargetSocket("yTargetSocket"),zTargetSocket("zTargetSocket"), LATENCY(10, SC_NS)   
+  : xTargetSocket("xTargetSocket"), LATENCY(10, SC_NS)   
   {   
     xTargetSocket.register_nb_transport_fw(this, &Memory::nb_transport_fw);
-    yTargetSocket.register_nb_transport_fw(this, &Memory::nb_transport_fw);
-    zTargetSocket.register_nb_transport_fw(this, &Memory::nb_transport_fw);
 
     // Initialize memory with random data   
     for (int i = 0; i < SIZE; i++)   
@@ -483,7 +745,7 @@ SC_MODULE(Top)
   Router    *router4;  
   Router    *router5;
   Router    *router6;  
-  Router    *router7;   
+  Router7    *router7;   
   Memory    *memory;   
   Initiator *dummy;
 
@@ -497,9 +759,8 @@ SC_MODULE(Top)
     router4    = new Router("router4");
     router5    = new Router("router5");
     router6    = new Router("router6");
-    router7    = new Router("router7");
+    router7    = new Router7("router7");
     memory     = new Memory("memory");   
-    dummy      = new Initiator("dummy");
 
     /*Set Routers numbers IDs*/
     router0->setId(0);
@@ -540,14 +801,12 @@ SC_MODULE(Top)
     router6->yInitSocket(router2->yTargetSocket);
     router6->zInitSocket(router4->zTargetSocket);
 
-    router7->xInitSocket(memory->xTargetSocket);
-    router7->yInitSocket(memory->yTargetSocket);
-    router7->zInitSocket(memory->zTargetSocket);
-
-    /*Dummy conections so TLM doesnt complain*/
-    dummy->xInitSocket(router6->xTargetSocket);
-    dummy->yInitSocket(router3->yTargetSocket);
-    dummy->zInitSocket(router5->zTargetSocket);
+    router7->xInitSocket(router6->xTargetSocket);
+    router7->yInitSocket(router3->yTargetSocket);
+    router7->zInitSocket(router5->zTargetSocket);
+    router7->memorySocket(memory->xTargetSocket);
+    
+    
 
   }   
 };   
