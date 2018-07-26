@@ -38,6 +38,7 @@ enum class RequestDirection{
   MOVE_Z,
   NO_MOVE
 };
+
 /*
 Initiator start sending messages to diferents nodes.
 Has a thread processs which creates the transactions
@@ -109,10 +110,6 @@ struct Router: sc_module
   sc_event  fordwardEvent;
   sc_event  backwardEvent;
 
-  /*Referance to trans recive in FW method*/
-  tlm::tlm_generic_payload* trans_bw;   
-  tlm::tlm_phase            phase_bw;   
-  sc_time                   delay_bw;
 
   /*Default ID*/
   short m_id = -1;
@@ -167,7 +164,8 @@ struct Router: sc_module
   {     
     ID_extension* id_extension = new ID_extension;
     trans.get_extension( id_extension ); 
-  
+    tlm::tlm_command cmd = trans.get_command();   
+    sc_dt::uint64    adr = trans.get_address();   
     /*Check the resp was done*/
     if (phase == tlm::BEGIN_RESP) {
                               
@@ -179,8 +177,14 @@ struct Router: sc_module
       MessageInfo backwardMessage {&trans,phase,delay};
       backwardQueue.push(backwardMessage);
       backwardEvent.notify();
+
+      cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
+      cout << "INIT trans/bw = { " << (cmd ? 'W' : 'R') << ", " << hex << adr   
+           << " } , data = " << hex << data << " at time " << sc_time_stamp()   
+           << ", delay = " << delay << endl;
+
       return tlm::TLM_ACCEPTED;   
-    }   
+    }     
   } 
   
   void fordwardThread()  
@@ -243,9 +247,20 @@ struct Router: sc_module
           backwardMessage.phase = tlm::BEGIN_RESP;
           backwardMessage.delay = sc_time(10, SC_NS);
 
-          xTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);         
-          yTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
-          zTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
+          RequestDirection nextStep = calculateForwardRoute(m_id);
+          if(nextStep == RequestDirection::MOVE_X){
+            xTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
+          }
+          else if(nextStep == RequestDirection::MOVE_Y){
+            yTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
+          }
+          else if(nextStep == RequestDirection::MOVE_Z){
+            zTargetSocket->nb_transport_bw( *backwardMessage.transaction, backwardMessage.phase, backwardMessage.delay);
+          }
+          else{
+            cout<<"ALL NODES HAS BEEN NOTIFY";
+          }
+        
           //Delay
           wait(backwardMessage.delay);
           
@@ -258,7 +273,7 @@ struct Router: sc_module
 
   void createRequestsThread()   
   {   
-    if(m_id == 0){
+    if(m_id == 6){
       /*TML Payload is the struct use to send a request*/
       tlm::tlm_generic_payload trans;
 
@@ -280,8 +295,17 @@ struct Router: sc_module
       wait(10, SC_NS);
       /*Send the request to the next socket*/
       cout << name() << " BEGIN_REQ SENT" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;  
-      tlm::tlm_sync_enum status = xInitSocket->nb_transport_fw( trans, phase, delay );
       
+      RequestDirection nextStep = calculateForwardRoute(m_id);
+      if(nextStep == RequestDirection::MOVE_X){
+        xInitSocket->nb_transport_fw(trans, phase, delay);
+      }
+      else if(nextStep == RequestDirection::MOVE_Y){
+        yInitSocket->nb_transport_fw(trans, phase, delay);
+      }
+      else if(nextStep == RequestDirection::MOVE_Z){
+        zInitSocket->nb_transport_fw(trans, phase, delay);
+      }
       /*Delay between RD/WR request*/
       wait(100, SC_NS);
         
@@ -307,6 +331,29 @@ struct Router: sc_module
         return RequestDirection::MOVE_X;
       case 7:
         return RequestDirection::MOVE_X;
+      default:
+        return RequestDirection::NO_MOVE;
+    }
+  }
+
+  RequestDirection calculateBackwardRoute(short id){
+    switch(id){
+      case 0:
+        return RequestDirection::MOVE_X;
+      case 1:
+        return RequestDirection::MOVE_Z;
+      case 2:
+        return RequestDirection::MOVE_Z;
+      case 3:
+        return RequestDirection::NO_MOVE;
+      case 4:
+        return RequestDirection::MOVE_Z;
+      case 5:
+        return RequestDirection::MOVE_X;
+      case 6:
+        return RequestDirection::MOVE_Y;
+      case 7:
+        return RequestDirection::MOVE_Z;
       default:
         return RequestDirection::NO_MOVE;
     }
