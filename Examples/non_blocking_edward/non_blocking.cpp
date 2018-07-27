@@ -39,55 +39,6 @@ enum class RequestDirection{
   NO_MOVE
 };
 
-/*
-Initiator start sending messages to diferents nodes.
-Has a thread processs which creates the transactions
-*/
-//struct Initiator: sc_module   
-//{   
-//  /*
-//  Socket used to send the requests 
-//  */
-//  tlm_utils::simple_initiator_socket<Initiator> xInitSocket; 
-//  tlm_utils::simple_initiator_socket<Initiator> yInitSocket; 
-//  tlm_utils::simple_initiator_socket<Initiator> zInitSocket; 
-//  int data;   
-//
-//  SC_CTOR(Initiator)   
-//  : xInitSocket("xInitSocket"),yInitSocket("yInitSocket"),zInitSocket("zInitSocket")   
-//  {   
-//    /* Register callbacks for incoming messages*/
-//    xInitSocket.register_nb_transport_bw(this, &Initiator::nb_transport_bw);
-//    yInitSocket.register_nb_transport_bw(this, &Initiator::nb_transport_bw);
-//    zInitSocket.register_nb_transport_bw(this, &Initiator::nb_transport_bw);
-//     
-//  }   
-//   
-//  virtual tlm::tlm_sync_enum nb_transport_bw( tlm::tlm_generic_payload& trans,   
-//                                           tlm::tlm_phase& phase, sc_time& delay )   
-//  {   
-//    tlm::tlm_command cmd = trans.get_command();   
-//    sc_dt::uint64    adr = trans.get_address();   
-//    
-//    ID_extension* id_extension = new ID_extension;
-//    trans.get_extension( id_extension ); 
-//    
-//    if (phase == tlm::BEGIN_RESP) {
-//      // Initiator obliged to check response status   
-//      if (trans.is_response_error() )   
-//        SC_REPORT_ERROR("TLM2", "Response error from nb_transport");   
-//            
-//      //Delay
-//      wait(delay);
-//      cout << name () << " BEGIN_RESP RECEIVED" << " TRANS ID " << id_extension->transaction_id << " at time " << sc_time_stamp() << endl;
-//      cout << "INIT trans/bw = { " << (cmd ? 'W' : 'R') << ", " << hex << adr   
-//           << " } , data = " << hex << data << " at time " << sc_time_stamp()   
-//           << ", delay = " << delay << endl;
-//      return tlm::TLM_ACCEPTED;   
-//    }   
-//  }   
-//};   
-     
 
 /*
 The Router module only sends request

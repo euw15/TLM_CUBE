@@ -1,63 +1,42 @@
-//=====================================================================
-// @file 	Memory.h
-//
-// @brief 	Implements a simple template class loigc combinational memory module.
-//
-//=====================================================================
-//  Original Authors:
-//    Alonso Loaiza
-//=====================================================================
-
 #ifndef TLM_CUBE_MEMORY_H_
 #define TLM_CUBE_MEMORY_H_
 
 #include <systemc.h>
 #include <algorithm>
+#include "Router.h"
 
-template<unsigned int MemSize>
 class Memory : public sc_module
 {
-public:
-	sc_in<bool> WriteFlag;
-	sc_in<int> Address;
-	sc_in<int> DataIn;
-	sc_out<int> DataOut;
-	sc_out<bool> ErrorFlag;
+	public:
+	  SC_CTOR(Memory)   
+	  : xTargetSocket("xTargetSocket"), LATENCY(10, SC_NS)   
+	  {   
+	    xTargetSocket.register_nb_transport_fw(this, &Memory::nb_transport_fw);
 
-	void ReadOrWrite()
-	{
-		if(Address.read() < MemSize)
-		{
-			//Reset flags
-			ErrorFlag.write(false);
-			if(WriteFlag.read())
-			{
-				MemoryData[Address.read()] = DataIn.read();
-			}
-			else
-			{
-				DataOut.write(MemoryData[Address.read()]);
-			}
-		}
-		else
-		{
-			ErrorFlag.write(true);
-		}
-	}
+	    // Initialize memory with random data   
+	    for (int i = 0; i < SIZE; i++)   
+	      mem[i] = 0xAA000000 | (rand() % 256);   
+	   
+	    SC_THREAD(memoryRespondRequest);   
+	  }
 
-	SC_CTOR(Memory)
-	{
-		// Initialize the memory
-		std::fill(MemoryData, MemoryData + MemSize, 0);
+	  /*Multiple targets but only target x is used*/
+	  tlm_utils::simple_target_socket<Memory> xTargetSocket;
 
-		SC_METHOD( ReadOrWrite );
-			sensitive << WriteFlag;
-			sensitive << Address;
-			sensitive << DataIn;
-	}
+	  /*Message request queue*/
+	  std::queue<MessageInfo> incomingRequest;
 
-private:
-	int MemoryData[MemSize];
+	  /*Wait times*/
+	  enum { SIZE = 256 };   
+	  const sc_time LATENCY;   
+	  
+	  int mem[SIZE];   
+	  sc_event  requestEvent;   		
+	  virtual tlm::tlm_sync_enum nb_transport_fw( tlm::tlm_generic_payload& trans, tlm::tlm_phase& phase, sc_time& delay );
+	
+	private:
+	
+	void memoryRespondRequest();
 };
 
 #endif
