@@ -5,43 +5,42 @@
 
 SC_MODULE(Top)   
 {  
-  Router    *router0;
-  Router    *router1;
-  Router    *router2;  
-  Router    *router3;
-  Router    *router4;  
-  Router    *router5;
-  Router    *router6;  
-  Router    *router7; 
-  Null_Port *Null_Port0;  
-  Null_Port *Null_Port1;  
-  Null_Port *Null_Port2;  
-  Null_Port *Null_Port3;  
-  Null_Port *Null_Port4;  
-  Null_Port *Null_Port5;  
-  Null_Port *Null_Port6;  
-  Memory    *memory;   
-  //Initiator *dummy;
-
+  std::unique_ptr<Router> router0;
+  std::unique_ptr<Router> router1;
+  std::unique_ptr<Router> router2;  
+  std::unique_ptr<Router> router3;
+  std::unique_ptr<Router> router4;  
+  std::unique_ptr<Router> router5;
+  std::unique_ptr<Router> router6;  
+  std::unique_ptr<Router> router7; 
+  std::unique_ptr<Null_Port>  Null_Port1;  
+  std::unique_ptr<Null_Port>  Null_Port2;  
+  std::unique_ptr<Null_Port>  Null_Port3;  
+  std::unique_ptr<Null_Port>  Null_Port0;  
+  std::unique_ptr<Null_Port>  Null_Port4;  
+  std::unique_ptr<Null_Port>  Null_Port5;  
+  std::unique_ptr<Null_Port>  Null_Port6;  
+  std::unique_ptr<Memory>     memory;   
+  
   SC_CTOR(Top)   
   {   
     /*Init routers and memory*/ 
-    router0    = new Router("router0");
-    router1    = new Router("router1");
-    router2    = new Router("router2");
-    router3    = new Router("router3");
-    router4    = new Router("router4");
-    router5    = new Router("router5");
-    router6    = new Router("router6");
-    router7    = new Router("router7");
-    Null_Port0     = new Null_Port("NPO");   
-    Null_Port1     = new Null_Port("NP1");   
-    Null_Port2     = new Null_Port("NP2");   
-    Null_Port3     = new Null_Port("NP3");   
-    Null_Port4     = new Null_Port("NP4");   
-    Null_Port5     = new Null_Port("NP5");   
-    Null_Port6     = new Null_Port("NP6");   
-    memory     = new Memory("memory");   
+    router0    	   = std::make_unique<Router>("router0");
+    router1    	   = std::make_unique<Router>("router1");
+    router2    	   = std::make_unique<Router>("router2");
+    router3    	   = std::make_unique<Router>("router3");
+    router4    	   = std::make_unique<Router>("router4");
+    router5    	   = std::make_unique<Router>("router5");
+    router6    	   = std::make_unique<Router>("router6");
+    router7    	   = std::make_unique<Router>("router7");
+    Null_Port0     = std::make_unique<Null_Port>("NPO");   
+    Null_Port1     = std::make_unique<Null_Port>("NP1");   
+    Null_Port2     = std::make_unique<Null_Port>("NP2");   
+    Null_Port3     = std::make_unique<Null_Port>("NP3");   
+    Null_Port4     = std::make_unique<Null_Port>("NP4");   
+    Null_Port5     = std::make_unique<Null_Port>("NP5");   
+    Null_Port6     = std::make_unique<Null_Port>("NP6");   
+    memory     	   = std::make_unique<Memory>("memory");   
 
     /*Set Routers numbers IDs*/
     router0->setId(0);
